@@ -4,7 +4,7 @@ Forecast Twitch concurrent-viewer quantiles hour by hour for a release day,
 starting from hour 1's known print, by transferring the release-day shape of
 the k nearest past launches.
 
-Model: k-nearest-launch shape transfer (k=4, level weight 0.3).
+Model: k-nearest-launch shape transfer (k=4, level weight 0.4).
 
   * hour_key(day_start, h) = the ISO hour stamp at day_start + (h - 1) hours.
   * For each comparable launch, build a "from" -> viewers map.  v1 is the
@@ -16,13 +16,16 @@ Model: k-nearest-launch shape transfer (k=4, level weight 0.3).
   * The target launch's shape is built the same way from case "history"
     (points keyed by "at").
   * sim(a, b) = mean squared difference of the last min(len) elements.
-  * Rank comparables by sim(target_shape, comp_shape) + 0.3 * (ln(v1) - ln(hour1))^2
+  * Rank comparables by sim(target_shape, comp_shape) + 0.4 * (ln(v1) - ln(hour1))^2
     and keep the 4 nearest.
   * For each hour h in 2..24, gather the neighbors' ratios[h] (sorted); if
     none, skip the hour.  mu = mean, sd = sample std.  base = ln(v0) + mu with
     v0 = max(hour1, 1).  Quantile levels [0.05, 0.25, 0.5, 0.75, 0.95] use
     Z = {-1.6449, -0.6745, 0.0, 0.6745, 1.6449}:
     q = max(int(round(exp(base + Z * sd))), 1).
+
+Quantile widths use 0.9 times the neighbors' residual standard deviation with
+a floor of 0.4 log units, tuned by leave-one-out backtest.
 
 Quantiles are clamped to [1, 1000000000] because the grader rejects values
 outside that range.
@@ -46,7 +49,7 @@ Z = {
 }
 LEVELS = [0.05, 0.25, 0.5, 0.75, 0.95]
 K = 4
-LEVEL_WEIGHT = 0.3
+LEVEL_WEIGHT = 0.4
 
 
 def parse_ts(value):
@@ -144,7 +147,7 @@ def main():
         if not vals:
             continue
         mu = sum(vals) / len(vals)
-        sd = math.sqrt(sum((x - mu) ** 2 for x in vals) / max(len(vals) - 1, 1))
+        sd = max(math.sqrt(sum((x - mu) ** 2 for x in vals) / max(len(vals) - 1, 1)) * 0.9, 0.4)
         base = math.log(max(hour1, 1)) + mu
         q = [_clamp(int(round(math.exp(base + Z[t] * sd)))) for t in LEVELS]
         hours.append({"hour": h, "q": q})
